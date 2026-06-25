@@ -36,10 +36,10 @@
             <div id="thrust-val" class="data-value">0%</div>
             <div class="bar"><div id="thrust-fill" class="fill" style="width: 0%;"></div></div>
             <div class="data-label">SYS_STATUS</div>
-            <div id="status-txt" class="text-[10px] text-white">INITIALIZING</div>
+            <div id="status-txt" class="text-[10px] text-white">NOMINAL</div>
         </div>
         <div class="glass col-span-3 flex justify-between items-end">
-            <div class="text-[10px] text-white font-bold">ORB-VORTEX // NAV_SYNC_ACTIVE</div>
+            <div class="text-[10px] text-white font-bold">ORB-VORTEX // PROCEDURAL_SYNC</div>
             <div class="text-[8px] text-zinc-500">SPD: <span id="vel">0.0</span>KM/S | SHAKE_LVL: <span id="shake-val">0</span></div>
         </div>
     </div>
@@ -53,44 +53,46 @@
     function init() {
         clock = new THREE.Clock();
         scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050508);
         camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 5000);
         camera.position.set(0, 0, 10);
 
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.setPixelRatio(window.devicePixelRatio);
         document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-        const manager = new THREE.LoadingManager();
-        manager.onLoad = () => { document.getElementById('status-txt').innerText = "NOMINAL"; };
+        // Procedural Starfield
+        const starGeo = new THREE.BufferGeometry();
+        const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5, transparent: true });
+        const starPos = [];
+        for(let i=0; i<3000; i++) starPos.push((Math.random()-0.5)*2000, (Math.random()-0.5)*2000, (Math.random()-0.5)*2000);
+        starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
+        scene.add(new THREE.Points(starGeo, starMat));
 
-        const texLoader = new THREE.TextureLoader(manager);
-        texLoader.load('galaxy.jpg', tex => {
-            tex.mapping = THREE.EquirectangularReflectionMapping;
-            scene.background = tex;
-            scene.environment = tex;
-        });
-
-        // Added: Cinematic Space Light Hue (Hemisphere Light)
-        // Sky color: Deep Cyan/Blue, Ground color: Dark Void
-        const light = new THREE.HemisphereLight(0x0a2a44, 0x000000, 1.2);
-        scene.add(light);
+        // Lights
+        scene.add(new THREE.HemisphereLight(0x0a2a44, 0x000000, 1.5));
+        scene.add(new THREE.DirectionalLight(0xffffff, 0.8));
 
         window.addEventListener('keydown', e => { if(keys.hasOwnProperty(e.key)) keys[e.key] = true; });
         window.addEventListener('keyup', e => { if(keys.hasOwnProperty(e.key)) keys[e.key] = false; });
 
-        loadModel(manager);
+        loadModel();
         animate();
     }
 
-    function loadModel(manager) {
-        const loader = new THREE.GLTFLoader(manager);
+    function loadModel() {
+        const loader = new THREE.GLTFLoader();
         loader.load('Orbvortex.glb', gltf => {
             ship = gltf.scene;
-            scene.add(ship);
-        }, undefined, () => {
-            ship = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5, 2), new THREE.MeshStandardMaterial({wireframe: true, color: 0xffffff}));
+            ship.traverse(c => {
+                if(c.isMesh) {
+                    c.material = new THREE.MeshToonMaterial({ 
+                        color: 0xffffff, 
+                        flatShading: true,
+                        wireframe: false
+                    });
+                }
+            });
             scene.add(ship);
         });
     }
@@ -98,7 +100,7 @@
     function animate() {
         requestAnimationFrame(animate);
         const delta = clock.getDelta();
-
+        
         if(keys.w) targetPitch = 0.5; else if(keys.s) targetPitch = -0.5; else targetPitch = 0;
         if(keys.a) targetYaw = 0.5; else if(keys.d) targetYaw = -0.5; else targetYaw = 0;
         if(keys.ArrowUp) targetThrust = Math.min(100, targetThrust + 1);
@@ -125,13 +127,6 @@
 
         renderer.render(scene, camera);
     }
-    
-    window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
     window.onload = init;
 </script>
 </body>
