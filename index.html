@@ -3,130 +3,302 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ORB | VORTEX - COMMAND</title>
+    <title>ORB | Vortex - Sim</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/GLTFLoader.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;400;700&display=swap');
-        body, html { margin: 0; padding: 0; background: #000; font-family: 'Inter', sans-serif; overflow: hidden; height: 100%; width: 100%; }
+        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Courier New', monospace; }
         #canvas-container { position: absolute; inset: 0; z-index: 0; }
-        .hud { position: absolute; inset: 20px; pointer-events: none; display: grid; grid-template-columns: 280px 1fr 280px; grid-template-rows: 1fr auto; gap: 20px; z-index: 10; }
-        .glass { background: rgba(10, 10, 15, 0.4); backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.1); padding: 20px; pointer-events: auto; }
-        .data-label { font-size: 8px; letter-spacing: 0.2em; color: #a1a1aa; text-transform: uppercase; }
-        .data-value { font-size: 14px; font-weight: 200; color: #fff; margin-bottom: 12px; }
-        .bar { height: 2px; background: rgba(255,255,255,0.1); width: 100%; margin-bottom: 15px; }
-        .fill { height: 100%; background: #fff; transition: width 0.1s linear; }
+        .hud-layer { position: absolute; inset: 0; pointer-events: none; z-index: 10; padding: 15px; display: grid; grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; gap: 10px; }
+        @media (min-width: 768px) { .hud-layer { grid-template-columns: 300px 1fr 300px; padding: 25px; } }
+        .panel { border: 1px solid #3b82f6; background: rgba(15, 23, 42, 0.6); padding: 12px; color: #60a5fa; pointer-events: auto; backdrop-filter: blur(10px); }
+        .gauge { height: 4px; background: #1e3a8a; margin: 4px 0 10px 0; }
+        .fill { height: 100%; background: #3b82f6; transition: width 0.1s; }
     </style>
 </head>
 <body>
-    <div id="canvas-container"></div>
-    <div class="hud">
-        <div class="glass flex flex-col">
-            <div class="data-label">VECT_YAW</div>
-            <div id="yaw-val" class="data-value">0.00°</div>
-            <div class="bar"><div id="yaw-fill" class="fill" style="width: 50%;"></div></div>
-            <div class="data-label">VECT_PITCH</div>
-            <div id="pitch-val" class="data-value">0.00°</div>
-            <div class="bar"><div id="pitch-fill" class="fill" style="width: 50%;"></div></div>
-        </div>
-        <div></div>
-        <div class="glass text-right">
-            <div class="data-label">THRUST_OUTPUT</div>
-            <div id="thrust-val" class="data-value">0%</div>
-            <div class="bar"><div id="thrust-fill" class="fill" style="width: 0%;"></div></div>
-            <div class="data-label">SYS_STATUS</div>
-            <div id="status-txt" class="text-[10px] text-white">NOMINAL</div>
-        </div>
-        <div class="glass col-span-3 flex justify-between items-end">
-            <div class="text-[10px] text-white font-bold">ORB-VORTEX // PROCEDURAL_SYNC</div>
-            <div class="text-[8px] text-zinc-500">SPD: <span id="vel">0.0</span>KM/S | SHAKE_LVL: <span id="shake-val">0</span></div>
-        </div>
+
+<div id="canvas-container"></div>
+
+<div class="hud-layer">
+    <!-- Left Cockpit Panel -->
+    <div class="panel">
+        <h2 class="text-[10px] font-bold text-blue-300 uppercase mb-4">Navigation Data</h2>
+        <div class="text-[9px]">YAW: <span id="yaw-val">0.00</span></div>
+        <div class="gauge"><div id="yaw-fill" class="fill" style="width: 50%;"></div></div>
+        <div class="text-[9px]">PITCH: <span id="pitch-val">0.00</span></div>
+        <div class="gauge"><div id="pitch-fill" class="fill" style="width: 50%;"></div></div>
+    </div>
+    
+    <div></div>
+    
+    <!-- Right Cockpit Panel -->
+    <div class="panel">
+        <h2 class="text-[10px] font-bold text-blue-300 uppercase mb-4">Thruster Matrix</h2>
+        <div class="text-[9px]">THRUST: <span id="thrust-val">0%</span></div>
+        <div class="gauge"><div id="thrust-fill" class="fill" style="width: 0%;"></div></div>
+        <div class="text-[9px] mt-4 text-blue-400">SPRITE: ORBVORTEX.GLB</div>
+        <div id="status" class="text-[9px] text-blue-200 opacity-60">STATUS: INITIALIZING</div>
     </div>
 
+    <!-- Bottom Status Bar -->
+    <div class="panel col-span-1 md:col-span-3 flex justify-between items-center self-end mt-auto">
+        <div class="text-[9px]">VEL: <span id="vel">0.0</span> km/s</div>
+        <div class="text-[10px] text-blue-300 font-bold tracking-widest text-center flex-1 mx-4 opacity-80">
+            CONTROLS: [W/S] PITCH &nbsp;|&nbsp; [A/D] YAW &nbsp;|&nbsp; [↑/↓] THRUST
+        </div>
+        <div class="text-[9px]">SYS_SYNC: <span id="sync">100%</span></div>
+    </div>
+</div>
+
 <script>
-    let scene, camera, renderer, ship, clock;
+    let scene, camera, renderer, ship, starSystem;
+    const loader = new THREE.GLTFLoader();
+    
+    // State logic for smooth user input
     const state = { yaw: 0, pitch: 0, thrust: 0 };
-    let targetYaw = 0, targetPitch = 0, targetThrust = 0;
-    const keys = { w:false, a:false, s:false, d:false, ArrowUp:false, ArrowDown:false };
+    let targetYaw = 0;
+    let targetPitch = 0;
+    let targetThrust = 0;
+    
+    const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowDown: false };
+    
+    // Array to hold our procedural celestial bodies
+    const celestialBodies = [];
 
     function init() {
-        clock = new THREE.Clock();
         scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x050508);
-        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 5000);
+        scene.background = new THREE.Color(0x0a0f1c); // Nebula Deep Blue background
+        scene.fog = new THREE.FogExp2(0x0f172a, 0.003); // Lighter fog so we can see planets in the distance
+        
+        camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 2000);
         camera.position.set(0, 0, 10);
 
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
+        
+        // --- ADDED FOR PBR & REALISTIC LIGHTING ---
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        
         document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-        // Procedural Starfield
+        // Load Skybox and HDRI Environment Map (galaxy.jpg)
+        const texLoader = new THREE.TextureLoader();
+        texLoader.load('galaxy.jpg', function(texture) {
+            texture.mapping = THREE.EquirectangularReflectionMapping;
+            texture.encoding = THREE.sRGBEncoding;
+            scene.background = texture;
+            scene.environment = texture; // Provides PBR reflections to all materials
+            document.getElementById('status').innerText = "STATUS: ENV_MAP_LOADED";
+        }, undefined, function(err) {
+            console.warn("Could not load galaxy.jpg skybox, using default deep space environment.", err);
+        });
+
+        // Add Realistic PBR Lighting
+        scene.add(new THREE.AmbientLight(0xffffff, 0.3)); // Neutral ambient for realistic shadows
+        const sunLight = new THREE.DirectionalLight(0xffeedd, 2.0); // Sun-like directional light
+        sunLight.position.set(100, 50, 50);
+        scene.add(sunLight);
+        
+        // Optional fill light for the dark side
+        const fillLight = new THREE.DirectionalLight(0xaaccff, 0.5);
+        fillLight.position.set(-100, -50, -50);
+        scene.add(fillLight);
+
+        // Particle Starfield
         const starGeo = new THREE.BufferGeometry();
-        const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5, transparent: true });
-        const starPos = [];
-        for(let i=0; i<3000; i++) starPos.push((Math.random()-0.5)*2000, (Math.random()-0.5)*2000, (Math.random()-0.5)*2000);
-        starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
-        scene.add(new THREE.Points(starGeo, starMat));
+        const starPos = new Float32Array(3000 * 3);
+        for(let i=0; i<3000*3; i++) {
+            starPos[i] = (Math.random() - 0.5) * 1000;
+        }
+        starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+        const starMat = new THREE.PointsMaterial({ color: 0x93c5fd, size: 0.3, transparent: true, opacity: 0.8 });
+        starSystem = new THREE.Points(starGeo, starMat);
+        scene.add(starSystem);
 
-        // Lights
-        scene.add(new THREE.HemisphereLight(0x0a2a44, 0x000000, 1.5));
-        scene.add(new THREE.DirectionalLight(0xffffff, 0.8));
+        // Generate Procedural Planets/Asteroids
+        createProceduralUniverse();
 
-        window.addEventListener('keydown', e => { if(keys.hasOwnProperty(e.key)) keys[e.key] = true; });
-        window.addEventListener('keyup', e => { if(keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+        // Event Listeners for Controls
+        window.addEventListener('keydown', (e) => {
+            if(keys.hasOwnProperty(e.key)) keys[e.key] = true;
+            if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true;
+        });
+        
+        window.addEventListener('keyup', (e) => {
+            if(keys.hasOwnProperty(e.key)) keys[e.key] = false;
+            if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false;
+        });
 
         loadModel();
         animate();
     }
 
+    function createProceduralUniverse() {
+        const geometries = [
+            new THREE.IcosahedronGeometry(1, 2), // Low poly planet
+            new THREE.IcosahedronGeometry(1, 4), // Smooth planet
+            new THREE.DodecahedronGeometry(1, 0) // Asteroid shape
+        ];
+
+        for(let i = 0; i < 15; i++) {
+            // Randomize cobalt/cyan hues for PBR standard materials
+            const hue = 0.55 + (Math.random() * 0.1); 
+            const mat = new THREE.MeshStandardMaterial({
+                color: new THREE.Color().setHSL(hue, 0.6, 0.4),
+                roughness: Math.random() * 0.8 + 0.2, // Physical roughness
+                metalness: Math.random() * 0.6,       // Physical metalness
+                flatShading: Math.random() > 0.5
+            });
+
+            const geo = geometries[Math.floor(Math.random() * geometries.length)];
+            const mesh = new THREE.Mesh(geo, mat);
+
+            // Random position far down the Z-axis
+            resetCelestialBody(mesh);
+            // Stagger initial Z positions so they don't all spawn at once
+            mesh.position.z = -Math.random() * 1000; 
+
+            scene.add(mesh);
+            celestialBodies.push(mesh);
+        }
+    }
+
+    function resetCelestialBody(mesh) {
+        // Spawn deep in the background
+        mesh.position.z = -1000 - (Math.random() * 500);
+        // Random X and Y spread
+        mesh.position.x = (Math.random() - 0.5) * 600;
+        mesh.position.y = (Math.random() - 0.5) * 600;
+        
+        // Random scale between 10 and 60
+        const scale = 10 + Math.random() * 50;
+        mesh.scale.set(scale, scale, scale);
+        
+        // Random rotation speeds
+        mesh.userData.rotX = (Math.random() - 0.5) * 0.01;
+        mesh.userData.rotY = (Math.random() - 0.5) * 0.01;
+    }
+
     function loadModel() {
-        const loader = new THREE.GLTFLoader();
-        loader.load('Orbvortex.glb', gltf => {
+        // Auto-detect if we are in the AI Canvas environment or running locally/hosted
+        const isCanvasEnv = window.location.hostname.includes('usercontent') || window.location.protocol === 'blob:';
+        const modelUrl = isCanvasEnv ? 'uploaded:Orbvortex.glb' : 'Orbvortex.glb';
+        
+        loader.load(modelUrl, (gltf) => {
             ship = gltf.scene;
-            ship.traverse(c => {
-                if(c.isMesh) {
-                    c.material = new THREE.MeshToonMaterial({ 
-                        color: 0xffffff, 
-                        flatShading: true,
-                        wireframe: false
-                    });
+            
+            // Allow native GLTF PBR materials to load and react to the environment map
+            ship.traverse(c => { 
+                if(c.isMesh && c.material) {
+                    c.material.envMapIntensity = 1.0;
+                    c.material.needsUpdate = true;
                 }
             });
+            
+            // Position ship slightly lower so it doesn't block the center view
+            ship.position.y = -1;
+            scene.add(ship);
+            document.getElementById('status').innerText = "STATUS: UAP_SYNCED (PBR)";
+        }, undefined, (err) => {
+            console.warn("Error loading GLB from blob, falling back to procedural mesh.", err);
+            
+            // Show specific error if user just double-clicked the HTML file
+            if (window.location.protocol === 'file:') {
+                document.getElementById('status').innerText = "STATUS: CORS_ERROR (USE LOCAL SERVER)";
+                document.getElementById('status').classList.replace('text-blue-200', 'text-red-400');
+            } else {
+                document.getElementById('status').innerText = "STATUS: LATTICE_FALLBACK";
+            }
+
+            ship = new THREE.Mesh(
+                new THREE.IcosahedronGeometry(1.5, 2), 
+                new THREE.MeshStandardMaterial({ color: 0x60a5fa, roughness: 0.2, metalness: 0.8, wireframe: true })
+            );
+            ship.position.y = -1;
             scene.add(ship);
         });
     }
 
     function animate() {
         requestAnimationFrame(animate);
-        const delta = clock.getDelta();
         
-        if(keys.w) targetPitch = 0.5; else if(keys.s) targetPitch = -0.5; else targetPitch = 0;
-        if(keys.a) targetYaw = 0.5; else if(keys.d) targetYaw = -0.5; else targetYaw = 0;
-        if(keys.ArrowUp) targetThrust = Math.min(100, targetThrust + 1);
-        if(keys.ArrowDown) targetThrust = Math.max(0, targetThrust - 2);
+        // Flight Control Logic
+        if (keys.w) targetPitch = 0.5;
+        else if (keys.s) targetPitch = -0.5;
+        else targetPitch = 0;
 
-        state.yaw += (targetYaw - state.yaw) * delta * 5;
-        state.pitch += (targetPitch - state.pitch) * delta * 5;
-        state.thrust += (targetThrust - state.thrust) * delta * 5;
+        if (keys.a) targetYaw = 0.5;
+        else if (keys.d) targetYaw = -0.5;
+        else targetYaw = 0;
 
-        if(ship) {
-            ship.rotation.set(state.pitch, state.yaw, -state.yaw * 0.8);
-            const shake = (state.thrust / 100) * 0.15;
-            camera.position.set((Math.random()-0.5)*shake, (Math.random()-0.5)*shake, 10);
+        if (keys.ArrowUp) targetThrust = Math.min(100, targetThrust + 0.5);
+        if (keys.ArrowDown) targetThrust = Math.max(0, targetThrust - 1.0);
+
+        // Smoothly interpolate (lerp) current state to target state
+        state.yaw += (targetYaw - state.yaw) * 0.05;
+        state.pitch += (targetPitch - state.pitch) * 0.05;
+        state.thrust += (targetThrust - state.thrust) * 0.05;
+
+        // Apply motion to Ship Model
+        if(ship) { 
+            ship.rotation.y = state.yaw; 
+            ship.rotation.x = state.pitch; 
+            // Bank/Roll effect
+            ship.rotation.z = -state.yaw * 0.8;
+            
+            // Subtle hover effect
+            ship.position.y = -1 + Math.sin(Date.now() * 0.002) * 0.1;
         }
 
-        document.getElementById('yaw-val').innerText = state.yaw.toFixed(2) + "°";
-        document.getElementById('pitch-val').innerText = state.pitch.toFixed(2) + "°";
-        document.getElementById('yaw-fill').style.width = (50 + state.yaw * 50) + "%";
-        document.getElementById('pitch-fill').style.width = (50 + state.pitch * 50) + "%";
-        document.getElementById('thrust-val').innerText = Math.floor(state.thrust) + "%";
-        document.getElementById('thrust-fill').style.width = state.thrust + "%";
-        document.getElementById('vel').innerText = (state.thrust * 1.2).toFixed(1);
-        document.getElementById('shake-val').innerText = Math.floor(state.thrust * 0.15);
+        // Calculate actual forward speed based on thrust (plus a tiny baseline drift)
+        const forwardSpeed = 0.5 + (state.thrust * 0.15);
+
+        // Move Celestial Bodies (Planets/Asteroids)
+        celestialBodies.forEach(body => {
+            // Move object towards camera on Z axis
+            body.position.z += forwardSpeed;
+            
+            // Give them some natural rotation
+            body.rotation.x += body.userData.rotX;
+            body.rotation.y += body.userData.rotY;
+
+            // If object passes behind the camera (Z > 20), recycle it deep into space
+            if (body.position.z > 20) {
+                resetCelestialBody(body);
+            }
+        });
+
+        // Rotate the starfield slightly based on yaw/pitch to simulate turning
+        if(starSystem) {
+            starSystem.rotation.y -= state.yaw * 0.01;
+            starSystem.rotation.x -= state.pitch * 0.01;
+        }
+
+        // Update UI Telemetry Data
+        document.getElementById('yaw-val').innerText = state.yaw.toFixed(2);
+        document.getElementById('yaw-fill').style.width = (50 + state.yaw * 100) + '%';
+        
+        document.getElementById('pitch-val').innerText = state.pitch.toFixed(2);
+        document.getElementById('pitch-fill').style.width = (50 + state.pitch * 100) + '%';
+        
+        document.getElementById('thrust-val').innerText = Math.floor(state.thrust) + '%';
+        document.getElementById('thrust-fill').style.width = state.thrust + '%';
+        
+        document.getElementById('vel').innerText = (state.thrust * 12.5).toFixed(1);
 
         renderer.render(scene, camera);
     }
+
+    window.onresize = () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+
     window.onload = init;
 </script>
 </body>
