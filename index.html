@@ -2,19 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ORB | VORTEX - COMMAND</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/GLTFLoader.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;400;700&display=swap');
-        body { margin: 0; background: #000; font-family: 'Inter', sans-serif; overflow: hidden; }
-        .hud { position: absolute; inset: 20px; pointer-events: none; display: grid; grid-template-columns: 280px 1fr 280px; grid-template-rows: 1fr auto; gap: 20px; }
+        body, html { margin: 0; padding: 0; background: #000; font-family: 'Inter', sans-serif; overflow: hidden; height: 100%; width: 100%; }
+        #canvas-container { position: absolute; inset: 0; z-index: 0; }
+        .hud { position: absolute; inset: 20px; pointer-events: none; display: grid; grid-template-columns: 280px 1fr 280px; grid-template-rows: 1fr auto; gap: 20px; z-index: 10; }
         .glass { background: rgba(10, 10, 15, 0.4); backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.1); padding: 20px; pointer-events: auto; }
         .data-label { font-size: 8px; letter-spacing: 0.2em; color: #a1a1aa; text-transform: uppercase; }
         .data-value { font-size: 14px; font-weight: 200; color: #fff; margin-bottom: 12px; }
         .bar { height: 2px; background: rgba(255,255,255,0.1); width: 100%; margin-bottom: 15px; }
-        .fill { height: 100%; background: #fff; transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+        .fill { height: 100%; background: #fff; transition: width 0.1s linear; }
     </style>
 </head>
 <body>
@@ -44,31 +46,36 @@
 
 <script>
     let scene, camera, renderer, ship, clock;
-    const loader = new THREE.GLTFLoader();
     const state = { yaw: 0, pitch: 0, thrust: 0 };
-    let targetYaw=0, targetPitch=0, targetThrust=0;
+    let targetYaw = 0, targetPitch = 0, targetThrust = 0;
     const keys = { w:false, a:false, s:false, d:false, ArrowUp:false, ArrowDown:false };
 
     function init() {
         clock = new THREE.Clock();
         scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 5000);
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 5000);
         camera.position.set(0, 0, 10);
+
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.setPixelRatio(window.devicePixelRatio);
         document.getElementById('canvas-container').appendChild(renderer.domElement);
 
         const manager = new THREE.LoadingManager();
-        manager.onLoad = () => document.getElementById('status-txt').innerText = "NOMINAL";
+        manager.onLoad = () => { document.getElementById('status-txt').innerText = "NOMINAL"; };
 
-        new THREE.TextureLoader(manager).load('galaxy.jpg', tex => {
+        const texLoader = new THREE.TextureLoader(manager);
+        texLoader.load('galaxy.jpg', tex => {
             tex.mapping = THREE.EquirectangularReflectionMapping;
             scene.background = tex;
             scene.environment = tex;
         });
 
-        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        // Added: Cinematic Space Light Hue (Hemisphere Light)
+        // Sky color: Deep Cyan/Blue, Ground color: Dark Void
+        const light = new THREE.HemisphereLight(0x0a2a44, 0x000000, 1.2);
+        scene.add(light);
 
         window.addEventListener('keydown', e => { if(keys.hasOwnProperty(e.key)) keys[e.key] = true; });
         window.addEventListener('keyup', e => { if(keys.hasOwnProperty(e.key)) keys[e.key] = false; });
@@ -78,12 +85,11 @@
     }
 
     function loadModel(manager) {
-        const isCanvasEnv = window.location.hostname.includes('usercontent');
-        loader.setLoadingManager(manager);
-        loader.load(isCanvasEnv ? 'uploaded:Orbvortex.glb' : 'Orbvortex.glb', gltf => {
+        const loader = new THREE.GLTFLoader(manager);
+        loader.load('Orbvortex.glb', gltf => {
             ship = gltf.scene;
             scene.add(ship);
-        }, null, () => {
+        }, undefined, () => {
             ship = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5, 2), new THREE.MeshStandardMaterial({wireframe: true, color: 0xffffff}));
             scene.add(ship);
         });
@@ -92,8 +98,7 @@
     function animate() {
         requestAnimationFrame(animate);
         const delta = clock.getDelta();
-        
-        // Flight Inputs
+
         if(keys.w) targetPitch = 0.5; else if(keys.s) targetPitch = -0.5; else targetPitch = 0;
         if(keys.a) targetYaw = 0.5; else if(keys.d) targetYaw = -0.5; else targetYaw = 0;
         if(keys.ArrowUp) targetThrust = Math.min(100, targetThrust + 1);
@@ -120,6 +125,13 @@
 
         renderer.render(scene, camera);
     }
+    
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
     window.onload = init;
 </script>
 </body>
